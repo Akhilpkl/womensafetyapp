@@ -34,9 +34,11 @@ class _HomePageState extends State<HomePage> {
     try {
       // 1️⃣ Request location permission
       LocationPermission permission = await Geolocator.checkPermission();
+      print("DEBUG: Initial location permission: $permission");
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         permission = await Geolocator.requestPermission();
+        print("DEBUG: After request permission: $permission");
         if (permission == LocationPermission.denied ||
             permission == LocationPermission.deniedForever) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -47,18 +49,41 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      // 2️⃣ Get current position
+      // 2️⃣ Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Location services are disabled. Please enable GPS.")),
+        );
+        return;
+      }
+
+      // 2️⃣ Get current position with improved settings
       Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 10),
+          forceAndroidLocationManager: true);
+      print("DEBUG: Current position - Lat: ${position.latitude}, Lng: ${position.longitude}, Accuracy: ${position.accuracy}");
+
+      // If accuracy is too low, try last known position
+      if (position.accuracy > 100) { // 100 meters threshold
+        Position? lastPosition = await Geolocator.getLastKnownPosition();
+        if (lastPosition != null && lastPosition.accuracy < position.accuracy) {
+          position = lastPosition;
+          print("DEBUG: Using last known position - Lat: ${position.latitude}, Lng: ${position.longitude}, Accuracy: ${position.accuracy}");
+        }
+      }
 
       // 3️⃣ Build correct Google Maps URL
       String locationUrl =
           "https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}";
+      print("DEBUG: Location URL: $locationUrl");
 
       String finalMessage = "$sosMessage $locationUrl";
 
       // 4️⃣ Request SMS permission and send
       bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
+      print("DEBUG: SMS permissions granted: $permissionsGranted");
       if (permissionsGranted != null && permissionsGranted) {
         for (String contact in trustedContacts) {
           telephony.sendSms(to: contact, message: finalMessage);
